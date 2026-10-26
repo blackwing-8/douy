@@ -1,4 +1,4 @@
-using Douy;
+using System.Runtime.InteropServices;
 using OpenCvSharp;
 
 namespace Douy.App;
@@ -7,7 +7,7 @@ public sealed class VideoFilePump
 {
     private const int MaxEdge = 1280;
 
-    public async Task Run(string path, Action<VideoFrame> publish, CancellationToken cancellationToken)
+    public async Task Run(string path, Action<RawVideoFrame> publish, CancellationToken cancellationToken)
     {
         if (!File.Exists(path))
         {
@@ -16,6 +16,7 @@ public sealed class VideoFilePump
 
         var capture = new VideoCapture();
         var openedPath = path;
+        var buffer = Array.Empty<byte>();
         try
         {
             openedPath = Open(capture, path);
@@ -54,23 +55,20 @@ public sealed class VideoFilePump
                 }
 
                 failures = 0;
-                var source = Fit(raw, fitted);
-                Cv2.ImEncode(".jpg", source, out var jpeg, new ImageEncodingParam(ImwriteFlags.JpegQuality, 75));
-                if (jpeg.Length == 0)
+                var target = TimeSpan.FromSeconds(index / fps);
+                if (clock.Elapsed - target > TimeSpan.FromMilliseconds(80))
                 {
-                    throw new InvalidOperationException("JPEG 编码失败。");
+                    index++;
+                    continue;
                 }
 
-                publish(new VideoFrame(
-                    index,
-                    (ushort)source.Width,
-                    (ushort)source.Height,
-                    (ulong)clock.ElapsedMilliseconds,
-                    jpeg));
+                var source = Fit(raw, fitted);
+                buffer = CopyBgr(source, buffer);
+                var pts = (ulong)(index * 1000.0 / fps);
+                publish(new RawVideoFrame(index, source.Width, source.Height, (int)source.Step(), buffer, pts, (int)Math.Round(fps)));
                 index++;
 
-                var target = TimeSpan.FromSeconds(index / fps);
-                var wait = target - clock.Elapsed;
+                var wait = TimeSpan.FromSeconds(index / fps) - clock.Elapsed;
                 if (wait > TimeSpan.Zero)
                 {
                     await Task.Delay(wait, cancellationToken);
@@ -85,6 +83,19 @@ public sealed class VideoFilePump
                 TryDelete(openedPath);
             }
         }
+    }
+
+    private static byte[] CopyBgr(Mat source, byte[] reuse)
+    {
+        var stride = (int)source.Step();
+        var length = stride * source.Rows;
+        if (reuse.Length != length)
+        {
+            reuse = new byte[length];
+        }
+
+        Marshal.Copy(source.Data, reuse, 0, length);
+        return reuse;
     }
 
     private static string Open(VideoCapture capture, string path)
@@ -102,8 +113,6 @@ public sealed class VideoFilePump
             extension = ".mp4";
         }
 
-        extension ??= ".mp4";
-
         var temp = Path.Combine(Path.GetTempPath(), "douy-" + Guid.NewGuid().ToString("N") + extension);
         File.Copy(path, temp, overwrite: true);
         capture.Open(temp);
@@ -120,14 +129,15 @@ public sealed class VideoFilePump
     {
         var width = source.Width;
         var height = source.Height;
-        if (width <= MaxEdge && height <= MaxEdge)
+        var longEdge = Math.Max(width, height);
+        var scale = longEdge > MaxEdge ? MaxEdge / (double)longEdge : 1;
+        var fittedWidth = Math.Max(2, (int)Math.Round(width * scale)) / 2 * 2;
+        var fittedHeight = Math.Max(2, (int)Math.Round(height * scale)) / 2 * 2;
+        if (fittedWidth == width && fittedHeight == height)
         {
             return source;
         }
 
-        var scale = MaxEdge / (double)Math.Max(width, height);
-        var fittedWidth = Math.Max(2, (int)(width * scale));
-        var fittedHeight = Math.Max(2, (int)(height * scale));
         Cv2.Resize(source, destination, new Size(fittedWidth, fittedHeight), 0, 0, InterpolationFlags.Area);
         return destination;
     }

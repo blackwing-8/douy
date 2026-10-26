@@ -10,6 +10,7 @@
 		E1D0A100000000000000000B /* DouyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D0A100000000000000000A /* DouyApp.swift */; };
 		E1D0A100000000000000000D /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D0A100000000000000000C /* ContentView.swift */; };
 		E1D0A100000000000000000F /* FrameClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D0A100000000000000000E /* FrameClient.swift */; };
+		E1D0A1000000000000000018 /* H264Player.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D0A1000000000000000017 /* H264Player.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -17,6 +18,7 @@
 		E1D0A100000000000000000A /* DouyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DouyApp.swift; sourceTree = "<group>"; };
 		E1D0A100000000000000000C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		E1D0A100000000000000000E /* FrameClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameClient.swift; sourceTree = "<group>"; };
+		E1D0A1000000000000000017 /* H264Player.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = H264Player.swift; sourceTree = "<group>"; };
 		E1D0A1000000000000000010 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -45,6 +47,7 @@
 				E1D0A100000000000000000A /* DouyApp.swift */,
 				E1D0A100000000000000000C /* ContentView.swift */,
 				E1D0A100000000000000000E /* FrameClient.swift */,
+				E1D0A1000000000000000017 /* H264Player.swift */,
 				E1D0A1000000000000000010 /* Info.plist */,
 			);
 			path = Douy;
@@ -129,6 +132,7 @@
 				E1D0A100000000000000000B /* DouyApp.swift in Sources */,
 				E1D0A100000000000000000D /* ContentView.swift in Sources */,
 				E1D0A100000000000000000F /* FrameClient.swift in Sources */,
+				E1D0A1000000000000000018 /* H264Player.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -179,7 +183,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.douy.Douy;
 				PRODUCT_NAME = Douy;
 				SDKROOT = iphoneos;
@@ -203,7 +207,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.douy.Douy;
 				PRODUCT_NAME = Douy;
 				SDKROOT = iphoneos;

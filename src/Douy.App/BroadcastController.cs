@@ -5,6 +5,8 @@ namespace Douy.App;
 public sealed class BroadcastController : IAsyncDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _encodeGate = new();
+    private H264LiveEncoder? _encoder;
     private StreamServer? _server;
     private CancellationTokenSource? _pumpCts;
     private string? _videoPath;
@@ -36,7 +38,15 @@ public sealed class BroadcastController : IAsyncDisposable
             }
 
             var server = new StreamServer();
-            server.ClientConnected += (_, name) => PhoneConnected?.Invoke(this, name);
+            server.ClientConnected += (_, name) =>
+            {
+                lock (_encodeGate)
+                {
+                    _encoder?.RequestKeyframe();
+                }
+
+                PhoneConnected?.Invoke(this, name);
+            };
             server.ClientDisconnected += (_, _) => PhoneDisconnected?.Invoke(this, EventArgs.Empty);
             await server.StartAsync(port);
             _server = server;
@@ -83,7 +93,7 @@ public sealed class BroadcastController : IAsyncDisposable
             StartPump();
         }
 
-        StatusChanged?.Invoke(this, _running ? "正在发送测试画面" : "已改回测试画面");
+        StatusChanged?.Invoke(this, _running ? "正在发送测试画面（H.264）" : "已改回测试画面");
     }
 
     public async ValueTask DisposeAsync()
@@ -104,6 +114,12 @@ public sealed class BroadcastController : IAsyncDisposable
     {
         Interlocked.Increment(ref _generation);
         _pumpCts?.Cancel();
+        lock (_encodeGate)
+        {
+            _encoder?.Dispose();
+            _encoder = null;
+        }
+
         if (_server != null)
         {
             await _server.DisposeAsync();
@@ -131,7 +147,7 @@ public sealed class BroadcastController : IAsyncDisposable
         {
             if (string.IsNullOrEmpty(path))
             {
-                StatusChanged?.Invoke(this, "正在发送测试画面，手机连上后就能看到");
+                StatusChanged?.Invoke(this, "正在发送测试画面（H.264），手机连上后就能看到");
                 await new TestPatternPump().Run(frame => Publish(frame, generation), cancellationToken);
                 return;
             }
@@ -162,14 +178,36 @@ public sealed class BroadcastController : IAsyncDisposable
         }
     }
 
-    private void Publish(VideoFrame frame, int generation)
+    private void Publish(RawVideoFrame frame, int generation)
     {
         if (generation != Volatile.Read(ref _generation))
         {
             return;
         }
 
-        _server?.PublishFrame(frame);
+        H264AccessUnit? unit;
+        lock (_encodeGate)
+        {
+            if (generation != Volatile.Read(ref _generation))
+            {
+                return;
+            }
+
+            _encoder ??= new H264LiveEncoder();
+            if (frame.Index == 0 || (_server?.ConsumeDrop() ?? false))
+            {
+                _encoder.RequestKeyframe();
+            }
+
+            unit = _encoder.Encode(frame);
+        }
+
+        if (unit == null)
+        {
+            return;
+        }
+
+        _server?.PublishH264(unit.Value);
         var now = System.Diagnostics.Stopwatch.GetTimestamp();
         _framesInWindow++;
         var window = (now - _windowStart) / (double)System.Diagnostics.Stopwatch.Frequency;
@@ -188,8 +226,10 @@ public sealed class BroadcastController : IAsyncDisposable
         }
 
         _lastPreviewStamp = now;
-        PreviewReady?.Invoke(this, new PreviewFrame(frame.Jpeg, frame.Width, frame.Height, _fps));
+        var copy = new byte[frame.Bgr.Length];
+        Buffer.BlockCopy(frame.Bgr, 0, copy, 0, copy.Length);
+        PreviewReady?.Invoke(this, new PreviewFrame(copy, frame.Width, frame.Height, frame.Stride, _fps));
     }
 }
 
-public readonly record struct PreviewFrame(byte[] Jpeg, int Width, int Height, double Fps);
+public readonly record struct PreviewFrame(byte[] Bgr, int Width, int Height, int Stride, double Fps);

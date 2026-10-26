@@ -10,7 +10,7 @@
     <RootNamespace>Douy.App</RootNamespace>
     <Product>兜鱼</Product>
     <AssemblyTitle>兜鱼</AssemblyTitle>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Description>兜鱼：把电脑视频送到 iPhone</Description>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <NoWarn>$(NoWarn);CS9057</NoWarn>
@@ -21,6 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="H264Sharp" Version="1.6.0" />
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260627" />
     <PackageReference Include="System.Drawing.Common" Version="7.0.0" />

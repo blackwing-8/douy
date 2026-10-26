@@ -30,16 +30,14 @@ public static class SelfTest
                 reader.Append(buffer.AsSpan(0, read));
                 while (reader.TryPop(out var packet))
                 {
-                    if (packet.Type != DouyProtocol.TypeFrame ||
-                        !DouyProtocol.TryDecodeFrame(packet.Payload, out var frame) ||
-                        frame.Jpeg.Length < 2 ||
-                        frame.Jpeg[0] != 0xFF ||
-                        frame.Jpeg[1] != 0xD8)
+                    if (packet.Type != DouyProtocol.TypeH264 ||
+                        !DouyProtocol.TryDecodeH264(packet.Payload, out var frame) ||
+                        frame.Data.Length < 4)
                     {
                         continue;
                     }
 
-                    Console.WriteLine($"ok {frame.Width}x{frame.Height} {frame.Jpeg.Length}");
+                    Console.WriteLine($"ok h264 {frame.Width}x{frame.Height} {frame.Data.Length} key={(frame.Keyframe ? 1 : 0)}");
                     return 0;
                 }
             }

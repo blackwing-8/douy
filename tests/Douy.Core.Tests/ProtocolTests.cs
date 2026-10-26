@@ -27,6 +27,25 @@ public class ProtocolTests
     }
 
     [Fact]
+    public void H264RoundTripKeepsAnnexBAndKeyframe()
+    {
+        var annex = new byte[] { 0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x00, 0x00, 0x01, 0x65, 0x88 };
+        var encoded = DouyProtocol.EncodeH264(new H264AccessUnit(4, 720, 1280, 66, true, annex));
+        var reader = new PacketReader();
+        reader.Append(encoded);
+
+        Assert.True(reader.TryPop(out var packet));
+        Assert.Equal(DouyProtocol.TypeH264, packet.Type);
+        Assert.True(DouyProtocol.TryDecodeH264(packet.Payload, out var unit));
+        Assert.Equal(4u, unit.Index);
+        Assert.Equal((ushort)720, unit.Width);
+        Assert.Equal((ushort)1280, unit.Height);
+        Assert.Equal(66ul, unit.PtsMilliseconds);
+        Assert.True(unit.Keyframe);
+        Assert.Equal(annex, unit.Data);
+    }
+
+    [Fact]
     public void HelloRoundTripKeepsDeviceName()
     {
         var encoded = DouyProtocol.EncodeHello("兜鱼的 iPhone");

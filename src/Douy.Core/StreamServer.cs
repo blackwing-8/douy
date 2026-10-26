@@ -1,17 +1,15 @@
 using System.Net;
 using System.Net.Sockets;
-using System.Threading.Channels;
 
 namespace Douy;
 
 public sealed class StreamServer : IAsyncDisposable
 {
-    private readonly Channel<byte[]> _frames = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(1)
-    {
-        FullMode = BoundedChannelFullMode.DropOldest,
-        SingleReader = true,
-        SingleWriter = false
-    });
+    private readonly object _sendGate = new();
+    private readonly SemaphoreSlim _sendSignal = new(0);
+    private byte[]? _pendingPacket;
+    private bool _sendSignaled;
+    private int _droppedPackets;
 
     private readonly object _clientGate = new();
     private TcpListener? _listener;
@@ -45,17 +43,41 @@ public sealed class StreamServer : IAsyncDisposable
 
     public void PublishFrame(VideoFrame frame)
     {
+        Enqueue(DouyProtocol.EncodeFrame(frame));
+    }
+
+    public void PublishH264(H264AccessUnit unit)
+    {
+        Enqueue(DouyProtocol.EncodeH264(unit));
+    }
+
+    public bool ConsumeDrop()
+    {
+        return Interlocked.Exchange(ref _droppedPackets, 0) > 0;
+    }
+
+    private void Enqueue(byte[] packet)
+    {
         if (Volatile.Read(ref _disposed) == 1)
         {
             return;
         }
 
-        try
+        lock (_sendGate)
         {
-            _frames.Writer.TryWrite(DouyProtocol.EncodeFrame(frame));
-        }
-        catch (ChannelClosedException)
-        {
+            if (_pendingPacket != null)
+            {
+                Interlocked.Increment(ref _droppedPackets);
+            }
+
+            _pendingPacket = packet;
+            if (_sendSignaled)
+            {
+                return;
+            }
+
+            _sendSignaled = true;
+            _sendSignal.Release();
         }
     }
 
@@ -76,7 +98,7 @@ public sealed class StreamServer : IAsyncDisposable
         }
 
         CloseCurrentClient(notify: false);
-        _frames.Writer.TryComplete();
+        _sendSignal.Release();
 
         var tasks = new List<Task>();
         if (_acceptTask != null)
@@ -98,6 +120,7 @@ public sealed class StreamServer : IAsyncDisposable
         }
 
         _cts?.Dispose();
+        _sendSignal.Dispose();
     }
 
     private async Task AcceptLoop(CancellationToken cancellationToken)
@@ -210,8 +233,22 @@ public sealed class StreamServer : IAsyncDisposable
     {
         try
         {
-            await foreach (var packet in _frames.Reader.ReadAllAsync(cancellationToken))
+            while (!cancellationToken.IsCancellationRequested)
             {
+                await _sendSignal.WaitAsync(cancellationToken);
+                byte[] packet;
+                lock (_sendGate)
+                {
+                    packet = _pendingPacket ?? Array.Empty<byte>();
+                    _pendingPacket = null;
+                    _sendSignaled = false;
+                }
+
+                if (packet.Length == 0)
+                {
+                    continue;
+                }
+
                 var stream = CurrentStream();
                 if (stream == null)
                 {
@@ -231,7 +268,7 @@ public sealed class StreamServer : IAsyncDisposable
         catch (OperationCanceledException)
         {
         }
-        catch (ChannelClosedException)
+        catch (ObjectDisposedException)
         {
         }
     }

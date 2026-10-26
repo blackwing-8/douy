@@ -4,6 +4,7 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Data;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Douy;
 
@@ -21,7 +22,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _resolutionText = "—";
     private string? _videoPath;
     private bool _isRunning;
-    private BitmapImage? _preview;
+    private BitmapSource? _preview;
 
     public MainViewModel()
     {
@@ -113,7 +114,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public string StartButtonText => IsRunning ? "停止传输" : "开始传输";
 
-    public BitmapImage? Preview
+    public BitmapSource? Preview
     {
         get => _preview;
         private set => Set(ref _preview, value);
@@ -210,7 +211,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             try
             {
-                Preview = DecodeJpeg(frame.Jpeg);
+                var preview = CreatePreview(frame);
+                if (preview != null)
+                {
+                    Preview = preview;
+                }
                 ResolutionText = frame.Width + " × " + frame.Height;
                 if (frame.Fps > 0)
                 {
@@ -224,14 +229,30 @@ public sealed class MainViewModel : INotifyPropertyChanged
         });
     }
 
-    private static BitmapImage DecodeJpeg(byte[] jpeg)
+    private static BitmapSource? CreatePreview(PreviewFrame frame)
     {
-        var image = new BitmapImage();
-        using var stream = new MemoryStream(jpeg);
-        image.BeginInit();
-        image.CacheOption = BitmapCacheOption.OnLoad;
-        image.StreamSource = stream;
-        image.EndInit();
+        if (frame.Width <= 0 || frame.Height <= 0 || frame.Stride <= 0 || frame.Bgr.Length < frame.Stride * frame.Height)
+        {
+            return null;
+        }
+
+        var tight = frame.Width * 3;
+        var stride = ((tight + 3) / 4) * 4;
+        var pixels = frame.Bgr;
+        var usedStride = frame.Stride;
+        if (usedStride != stride || pixels.Length < stride * frame.Height)
+        {
+            pixels = new byte[stride * frame.Height];
+            var rowBytes = Math.Min(tight, frame.Stride);
+            for (var y = 0; y < frame.Height; y++)
+            {
+                Buffer.BlockCopy(frame.Bgr, y * frame.Stride, pixels, y * stride, rowBytes);
+            }
+
+            usedStride = stride;
+        }
+
+        var image = BitmapSource.Create(frame.Width, frame.Height, 96, 96, PixelFormats.Bgr24, null, pixels, usedStride);
         image.Freeze();
         return image;
     }

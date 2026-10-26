@@ -2,20 +2,21 @@ import Foundation
 import Network
 import UIKit
 
-/// 与 Windows 端 DouyProtocol 相同：大端，magic DOUY，type 2 为 JPEG 帧。
+/// 与 Windows 端 DouyProtocol 相同：大端，magic DOUY，type 4 为 H.264。
 final class FrameClient: ObservableObject {
-    @Published var image: UIImage?
     @Published var status = "未连接"
     @Published var fps = 0.0
     @Published var frameWidth = 0
     @Published var frameHeight = 0
     @Published var isConnected = false
+    @Published var hasPicture = false
+
+    let player = H264Player()
 
     private let queue = DispatchQueue(label: "app.douy.frame")
     private var connection: NWConnection?
     private var buffer = Data()
     private var readOffset = 0
-    private var appliedIndex: UInt32?
     private var frameTimes: [CFAbsoluteTime] = []
     private var userClosed = false
     private var session = 0
@@ -32,7 +33,11 @@ final class FrameClient: ObservableObject {
         let session = session
         connection?.cancel()
         connection = nil
-        appliedIndex = nil
+        player.reset()
+        hasPicture = false
+        frameWidth = 0
+        frameHeight = 0
+        fps = 0
         queue.async { [weak self] in
             guard let self, self.session == session else { return }
             self.buffer.removeAll()
@@ -57,6 +62,7 @@ final class FrameClient: ObservableObject {
         session += 1
         connection?.cancel()
         connection = nil
+        player.reset()
         let session = session
         queue.async { [weak self] in
             guard let self, self.session == session else { return }
@@ -64,6 +70,7 @@ final class FrameClient: ObservableObject {
             self.readOffset = 0
         }
         isConnected = false
+        hasPicture = false
         fps = 0
         UIApplication.shared.isIdleTimerDisabled = false
         if userInitiated {
@@ -128,7 +135,6 @@ final class FrameClient: ObservableObject {
 
     private func drain() {
         let headerSize = 10
-        var latest: (jpeg: Data, width: Int, height: Int, index: UInt32)?
         while buffer.count - readOffset >= headerSize {
             let start = readOffset
             let magic = readUInt32(at: start)
@@ -150,14 +156,24 @@ final class FrameClient: ObservableObject {
                 break
             }
 
-            if type == 2, length >= 16 {
+            if type == 4, length >= 17 {
                 let payload = start + headerSize
-                let index = readUInt32(at: payload)
                 let width = Int(readUInt16(at: payload + 4))
                 let height = Int(readUInt16(at: payload + 6))
-                let jpegStart = buffer.startIndex + payload + 16
-                let jpegEnd = buffer.startIndex + start + total
-                latest = (buffer.subdata(in: jpegStart..<jpegEnd), width, height, index)
+                let pts = readUInt64(at: payload + 8)
+                let dataStart = buffer.startIndex + payload + 17
+                let dataEnd = buffer.startIndex + start + total
+                let accessUnit = buffer.subdata(in: dataStart..<dataEnd)
+                let token = session
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.session == token else { return }
+                    self.player.submit(accessUnit, ptsMilliseconds: pts)
+                    self.frameWidth = width
+                    self.frameHeight = height
+                    self.noteFrame()
+                    self.hasPicture = true
+                    self.status = "正在播放"
+                }
             }
 
             readOffset += total
@@ -166,23 +182,6 @@ final class FrameClient: ObservableObject {
         if readOffset > 256 * 1024 {
             buffer.removeFirst(readOffset)
             readOffset = 0
-        }
-
-        guard let latest else { return }
-        DispatchQueue.global(qos: .userInteractive).async { [weak self] in
-            guard let image = UIImage(data: latest.jpeg) else { return }
-            DispatchQueue.main.async {
-                guard let self else { return }
-                if let applied = self.appliedIndex, latest.index < applied {
-                    return
-                }
-                self.appliedIndex = latest.index
-                self.image = image
-                self.frameWidth = latest.width
-                self.frameHeight = latest.height
-                self.noteFrame()
-                self.status = "正在播放"
-            }
         }
     }
 
@@ -204,6 +203,15 @@ final class FrameClient: ObservableObject {
     private func readUInt16(at offset: Int) -> UInt16 {
         let base = buffer.startIndex + offset
         return (UInt16(buffer[base]) << 8) | UInt16(buffer[base + 1])
+    }
+
+    private func readUInt64(at offset: Int) -> UInt64 {
+        let base = buffer.startIndex + offset
+        var value: UInt64 = 0
+        for shift in 0..<8 {
+            value = (value << 8) | UInt64(buffer[base + shift])
+        }
+        return value
     }
 
     private func header(type: UInt8, payloadLength: Int) -> Data {

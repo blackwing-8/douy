@@ -11,7 +11,7 @@ public static class LanAddress
         var addresses = new List<string>();
         foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
         {
-            if (nic.OperationalStatus != OperationalStatus.Up)
+            if (nic.OperationalStatus != OperationalStatus.Up || IsVirtual(nic))
             {
                 continue;
             }
@@ -42,6 +42,25 @@ public static class LanAddress
         }
 
         return addresses;
+    }
+
+    private static bool IsVirtual(NetworkInterface nic)
+    {
+        var text = nic.Name + " " + nic.Description;
+        var marks = new[]
+        {
+            "TAP", "VMware", "Virtual", "vEthernet", "Hyper-V", "Wintun",
+            "cfw", "SSTAP", "Clash", "Bluetooth", "Loopback", "VPN"
+        };
+        foreach (var mark in marks)
+        {
+            if (text.Contains(mark, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static bool IsPrivateIPv4(string text)

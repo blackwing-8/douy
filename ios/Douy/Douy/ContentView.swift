@@ -1,5 +1,23 @@
 import SwiftUI
 
+struct H264Screen: UIViewRepresentable {
+    let player: H264Player
+
+    func makeUIView(context: Context) -> H264HostView {
+        let view = H264HostView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .black
+        view.playerLayer.videoGravity = .resizeAspect
+        view.playerLayer.backgroundColor = UIColor.black.cgColor
+        player.attach(view.playerLayer)
+        return view
+    }
+
+    func updateUIView(_ uiView: H264HostView, context: Context) {
+        player.attach(uiView.playerLayer)
+    }
+}
+
 struct ContentView: View {
     @StateObject private var client = FrameClient()
     @State private var host = UserDefaults.standard.string(forKey: "douy.host") ?? ""
@@ -10,15 +28,13 @@ struct ContentView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            if let image = client.image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .onTapGesture(count: 2) {
-                        showControls.toggle()
-                    }
-            } else {
+            H264Screen(player: client.player)
+                .ignoresSafeArea()
+                .onTapGesture(count: 2) {
+                    showControls.toggle()
+                }
+
+            if !client.hasPicture {
                 VStack(spacing: 10) {
                     Text("兜鱼")
                         .font(.system(size: 44, weight: .bold))
@@ -26,6 +42,7 @@ struct ContentView: View {
                         .foregroundStyle(.white.opacity(0.7))
                 }
                 .foregroundStyle(.white)
+                .allowsHitTesting(false)
             }
 
             if showControls {
