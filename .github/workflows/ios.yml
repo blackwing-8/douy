@@ -1,0 +1,43 @@
+name: Build iOS
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  ipa:
+    name: Build unsigned IPA
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -project ios/Douy/Douy.xcodeproj \
+            -scheme Douy \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/Douy.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Pack IPA
+        run: |
+          APP="$RUNNER_TEMP/Douy.xcarchive/Products/Applications/Douy.app"
+          STAGE="$RUNNER_TEMP/ipa/Payload"
+          mkdir -p "$STAGE"
+          cp -a "$APP" "$STAGE/"
+          codesign --force --sign - "$STAGE/Douy.app"
+          mkdir -p dist
+          (cd "$RUNNER_TEMP/ipa" && zip -r9 "$GITHUB_WORKSPACE/dist/douy.ipa" Payload)
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: douy-ipa
+          path: dist/douy.ipa
+          if-no-files-found: error
